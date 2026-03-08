@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
-const { exists, isDirectory, listFiles, listDirs, readFile } = require('../lib/utils/fs-helpers');
+const { exists, isDirectory, listFiles, listDirs, readFile } = require('../.github/skills/validate-orchestration/scripts/lib/utils/fs-helpers');
 
 // ─── Test Helpers ───────────────────────────────────────────────────────────
 

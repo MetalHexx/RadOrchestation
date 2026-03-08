@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { extractFrontmatter } = require('../lib/utils/frontmatter');
+const { extractFrontmatter } = require('../.github/skills/validate-orchestration/scripts/lib/utils/frontmatter');
 
 // ─── Test Helpers ───────────────────────────────────────────────────────────
 

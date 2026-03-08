@@ -13,8 +13,8 @@ let mockReadFile = () => null;
 let mockExtractFrontmatter = () => ({ frontmatter: null, body: '' });
 
 const path = require('path');
-const fsHelpersPath = require.resolve('../lib/utils/fs-helpers');
-const frontmatterPath = require.resolve('../lib/utils/frontmatter');
+const fsHelpersPath = require.resolve('../.github/skills/validate-orchestration/scripts/lib/utils/fs-helpers');
+const frontmatterPath = require.resolve('../.github/skills/validate-orchestration/scripts/lib/utils/frontmatter');
 
 // Save originals
 const origFsHelpers = require(fsHelpersPath);
@@ -43,7 +43,7 @@ require.cache[frontmatterPath] = {
 };
 
 // Now require the module under test — it will pick up the mocked dependencies
-const checkPrompts = require('../lib/checks/prompts');
+const checkPrompts = require('../.github/skills/validate-orchestration/scripts/lib/checks/prompts');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

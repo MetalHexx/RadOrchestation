@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { parseYaml } = require('../lib/utils/yaml-parser');
+const { parseYaml } = require('../.github/skills/validate-orchestration/scripts/lib/utils/yaml-parser');
 
 // ─── Test Helpers ───────────────────────────────────────────────────────────
 

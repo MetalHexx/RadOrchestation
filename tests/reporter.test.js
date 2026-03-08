@@ -1,6 +1,6 @@
 'use strict';
 
-const { report, printHelp } = require('../lib/reporter');
+const { report, printHelp } = require('../.github/skills/validate-orchestration/scripts/lib/reporter');
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -173,7 +173,7 @@ captureStart();
 printHelp();
 const helpOutput = captureStop();
 assert(helpOutput.includes('Orchestration Validator v1.0.0'), 'help includes title');
-assert(helpOutput.includes('Usage: node validate-orchestration.js [options]'), 'help includes usage line');
+assert(helpOutput.includes('Usage: node .github/skills/validate-orchestration/scripts/validate-orchestration.js [options]'), 'help includes usage line');
 assert(helpOutput.includes('-h, --help'), 'help includes -h option');
 assert(helpOutput.includes('-v, --verbose'), 'help includes -v option');
 assert(helpOutput.includes('-q, --quiet'), 'help includes -q option');
@@ -212,7 +212,7 @@ assert(emptyOutput.includes('RESULT: PASS'), 'empty results produce PASS verdict
 
 // ─── CLI Feature Tests (P03-T04) ──────────────────────────────────────────────
 
-const { parseArgs } = require('../validate-orchestration');
+const { parseArgs } = require('../.github/skills/validate-orchestration/scripts/validate-orchestration');
 
 // Helpers for mocking globals
 const originalIsTTY = process.stdout.isTTY;
@@ -233,7 +233,7 @@ originalWrite.call(process.stdout, '\nT-help (exact help text match):\n');
   const expectedHelp = [
     'Orchestration Validator v1.0.0',
     '',
-    'Usage: node validate-orchestration.js [options]',
+    'Usage: node .github/skills/validate-orchestration/scripts/validate-orchestration.js [options]',
     '',
     'Options:',
     '  -h, --help              Show this help message and exit',
@@ -255,11 +255,11 @@ originalWrite.call(process.stdout, '\nT-help (exact help text match):\n');
     '  NO_COLOR=1       Equivalent to --no-color',
     '',
     'Examples:',
-    '  node validate-orchestration.js                  Run all checks',
-    '  node validate-orchestration.js --category agents  Check agents only',
-    '  node validate-orchestration.js --verbose          Detailed output',
-    '  node validate-orchestration.js --quiet            Summary only',
-    '  node validate-orchestration.js --no-color         CI-friendly output',
+    '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js                  Run all checks',
+    '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --category agents  Check agents only',
+    '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --verbose          Detailed output',
+    '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --quiet            Summary only',
+    '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --no-color         CI-friendly output',
   ].join('\n') + '\n';
 
   captureStart();

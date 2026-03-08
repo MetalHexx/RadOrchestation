@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
-const checkStructure = require('../lib/checks/structure');
+const checkStructure = require('../.github/skills/validate-orchestration/scripts/lib/checks/structure');
 
 // ─── Test Helpers ───────────────────────────────────────────────────────────
 

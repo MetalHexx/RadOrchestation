@@ -27,7 +27,7 @@ A zero-dependency Node.js CLI tool that validates all `.github/` orchestration f
 ### Run Full Validation
 
 ```bash
-node validate-orchestration.js
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js
 ```
 
 Validates all orchestration files and prints grouped results with a final summary bar.
@@ -37,9 +37,9 @@ Validates all orchestration files and prints grouped results with a final summar
 #### Workflow 1: Check Specific Category
 
 ```bash
-node validate-orchestration.js --category structure
-node validate-orchestration.js --category agents
-node validate-orchestration.js --category cross-references
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --category structure
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --category agents
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --category cross-references
 ```
 
 Run validation for one logical grouping. Useful when fixing a specific area. Categories run in dependency order (structure → agents → skills → config → instructions → prompts → cross-refs), so prerequisite checks run silently to ensure cross-reference accuracy.
@@ -47,7 +47,7 @@ Run validation for one logical grouping. Useful when fixing a specific area. Cat
 #### Workflow 2: Verbose Debugging
 
 ```bash
-node validate-orchestration.js --verbose
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --verbose
 ```
 
 Show detailed output including checksums, file paths, and actual vs. expected values for every check result. Helpful when diagnosing why a file is rejected.
@@ -55,7 +55,7 @@ Show detailed output including checksums, file paths, and actual vs. expected va
 #### Workflow 3: Plain-Text Output (No Colors)
 
 ```bash
-node validate-orchestration.js --no-color
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --no-color
 ```
 
 Emit plain ASCII output with `[PASS]`, `[FAIL]`, `[WARN]` markers instead of Unicode + ANSI colors. Useful when piping output to log files or non-TTY environments.
@@ -63,7 +63,7 @@ Emit plain ASCII output with `[PASS]`, `[FAIL]`, `[WARN]` markers instead of Uni
 #### Workflow 4: Quiet Mode (CI Integration)
 
 ```bash
-node validate-orchestration.js --quiet
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --quiet
 ```
 
 Print only the final summary bar — pass/fail counts and exit code. Perfect for CI/CD pipelines where you just need the result signal.
@@ -71,7 +71,7 @@ Print only the final summary bar — pass/fail counts and exit code. Perfect for
 #### Workflow 5: Help
 
 ```bash
-node validate-orchestration.js --help
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --help
 ```
 
 Print usage information and exit with code 0.
@@ -81,8 +81,8 @@ Print usage information and exit with code 0.
 Most flags can combine:
 
 ```bash
-node validate-orchestration.js --verbose --no-color --category agents
-node validate-orchestration.js --quiet --no-color
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --verbose --no-color --category agents
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js --quiet --no-color
 ```
 
 Special case: If both `--verbose` and `--quiet` are provided, `--quiet` wins (only summary bar printed).
@@ -170,7 +170,7 @@ In `--verbose`, each failed check includes `Expected` and `Found` blocks:
 Use exit codes in CI/CD scripts:
 
 ```bash
-node validate-orchestration.js
+node .github/skills/validate-orchestration/scripts/validate-orchestration.js
 if [ $? -ne 0 ]; then
   echo "Validation failed — fix errors above and retry."
   exit 1
@@ -185,7 +185,7 @@ fi
 
 **Solutions**:
 - Ensure you're running from the workspace root (where `.github/` exists)
-- Check that the tool path is correct: `node validate-orchestration.js` (not `node lib/validate.js`)
+- Check that the tool path is correct: `node .github/skills/validate-orchestration/scripts/validate-orchestration.js` (not `node lib/validate.js`)
 - Verify `.github/` is not in `.gitignore`
 
 ### "Invalid frontmatter" for valid-looking files
@@ -231,4 +231,4 @@ fi
 - Configuration Schema: `.github/orchestration.yml`
 - Agent Specification: `.github/skills/create-agent/SKILL.md`
 - Skill Specification: `.github/skills/create-skill/SKILL.md`
-- Validator Source: `validate-orchestration.js` and `lib/` directory
+- Validator Source: `.github/skills/validate-orchestration/scripts/validate-orchestration.js` and `.github/skills/validate-orchestration/scripts/lib/` directory

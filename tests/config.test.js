@@ -12,8 +12,8 @@ let mockReadFile = () => null;
 let mockParseYaml = () => null;
 
 const path = require('path');
-const fsHelpersPath = require.resolve('../lib/utils/fs-helpers');
-const yamlParserPath = require.resolve('../lib/utils/yaml-parser');
+const fsHelpersPath = require.resolve('../.github/skills/validate-orchestration/scripts/lib/utils/fs-helpers');
+const yamlParserPath = require.resolve('../.github/skills/validate-orchestration/scripts/lib/utils/yaml-parser');
 
 // Save originals so other exports remain functional
 const origFsHelpers = require(fsHelpersPath);
@@ -42,7 +42,7 @@ require.cache[yamlParserPath] = {
 };
 
 // Now require the module under test — it will pick up the mocked dependencies
-const checkConfig = require('../lib/checks/config');
+const checkConfig = require('../.github/skills/validate-orchestration/scripts/lib/checks/config');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

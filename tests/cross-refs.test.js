@@ -11,7 +11,7 @@ const assert = require('node:assert');
 let mockExists = () => false;
 
 const path = require('path');
-const fsHelpersPath = require.resolve('../lib/utils/fs-helpers');
+const fsHelpersPath = require.resolve('../.github/skills/validate-orchestration/scripts/lib/utils/fs-helpers');
 
 // Replace with proxy
 require.cache[fsHelpersPath] = {
@@ -28,7 +28,7 @@ require.cache[fsHelpersPath] = {
 };
 
 // Now require the module under test — it will pick up the mocked dependencies
-const checkCrossRefs = require('../lib/checks/cross-refs');
+const checkCrossRefs = require('../.github/skills/validate-orchestration/scripts/lib/checks/cross-refs');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

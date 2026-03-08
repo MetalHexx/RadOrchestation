@@ -296,7 +296,7 @@ function printHelp() {
     const helpText = [
       'Orchestration Validator v1.0.0',
       '',
-      'Usage: node validate-orchestration.js [options]',
+      'Usage: node .github/skills/validate-orchestration/scripts/validate-orchestration.js [options]',
       '',
       'Options:',
       '  -h, --help              Show this help message and exit',
@@ -318,11 +318,11 @@ function printHelp() {
       '  NO_COLOR=1       Equivalent to --no-color',
       '',
       'Examples:',
-      '  node validate-orchestration.js                  Run all checks',
-      '  node validate-orchestration.js --category agents  Check agents only',
-      '  node validate-orchestration.js --verbose          Detailed output',
-      '  node validate-orchestration.js --quiet            Summary only',
-      '  node validate-orchestration.js --no-color         CI-friendly output',
+      '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js                  Run all checks',
+      '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --category agents  Check agents only',
+      '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --verbose          Detailed output',
+      '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --quiet            Summary only',
+      '  node .github/skills/validate-orchestration/scripts/validate-orchestration.js --no-color         CI-friendly output',
     ].join('\n') + '\n';
 
     write(helpText);
