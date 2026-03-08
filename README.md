@@ -59,6 +59,8 @@ sequenceDiagram
     participant COD as Coder
     participant REV as Reviewer
 
+    Human->>ORC: ▶️ Execute project
+
     loop Each Phase
         ORC->>TP: Create Phase Plan
         TP-->>ORC: PHASE-PLAN.md
