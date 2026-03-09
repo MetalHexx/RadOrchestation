@@ -67,6 +67,8 @@ When spawned to update state after an event:
    - Pipeline halted → set `current_tier` to `"halted"`, record blockers
    - Human approved → set appropriate `human_approved` flag
    - Tier transition → update `current_tier`
+   - Code review complete → set `task.review_doc` to the review document path (e.g., `reports/CODE-REVIEW-P{NN}-T{NN}.md`). Leave `task.review_verdict` and `task.review_action` as `null` — triage has not run yet.
+   - Phase review complete → set `phase.phase_review` to the phase review document path (e.g., `reports/PHASE-REVIEW-P{NN}.md`). Leave `phase.phase_review_verdict` and `phase.phase_review_action` as `null` — triage has not run yet.
 3. **Update `project.updated`** timestamp
 4. **Write `state.json`**
 5. **Update `STATUS.md`** to reflect the new state
@@ -89,16 +91,32 @@ When spawned to plan a phase:
 1. **Read the Master Plan** — find the phase outline for the current phase
 2. **Read the Architecture** — module map, contracts, file structure
 3. **Read the Design** — components, design tokens (if applicable)
-4. **Read `state.json`** — current state, limits, previous phase reports
+4. **Read `state.json`** — current state, limits, `phase.phase_review` path
 5. **Read previous Phase Report** (if not first phase) — carry-forward items
-6. **Check limits**: Ensure task count won't exceed `limits.max_tasks_per_phase`
-7. **Break the phase into tasks**: Each task achievable in a single Coder session
-8. **Map dependencies**: Which tasks depend on other tasks' outputs
-9. **Define execution order**: Sequential order with parallel-ready pairs marked
-10. **Set exit criteria**: From Master Plan plus standard criteria (build passes, tests pass)
-11. **Use the `create-phase-plan` skill** to produce the document
-12. **Save** to `{PROJECT-DIR}/phases/{NAME}-PHASE-{NN}-{TITLE}.md`
-13. **Update `state.json`**: Create phase entry with tasks, set phase status to `"in_progress"`
+6. **IF `state.json → phase.phase_review != null`**:
+   Read the Phase Review at the path from `state.json → phase.phase_review`
+7. **Execute `triage-report` skill** (phase-level decision table):
+   - Write `phase.phase_review_verdict` ← verdict from Phase Review frontmatter (or skip if `phase_review` is null)
+   - Write `phase.phase_review_action` ← resolved from phase-level decision table (or skip if `phase_review` is null)
+
+**Decision routing after triage (step 7→8):**
+
+| `phase_review_action` value | What to produce in step 8 |
+|-----------------------------|--------------------------|
+| `"advanced"` or `null` (no review) | Normal Phase Plan for the next phase |
+| `"advanced"` (some exit criteria unmet) | Phase Plan with explicit carry-forward task section addressing unmet criteria |
+| `"corrective_tasks_issued"` | Phase Plan that opens with corrective tasks addressing the review's Cross-Task Issues; new tasks come after |
+| `"halted"` | DO NOT produce a Phase Plan — write halt to state.json; stop |
+
+8. **PLAN**: Produce Phase Plan document based on triage outcome:
+   - **Check limits**: Ensure task count won't exceed `limits.max_tasks_per_phase`
+   - **Break the phase into tasks**: Each task achievable in a single Coder session
+   - **Map dependencies**: Which tasks depend on other tasks' outputs
+   - **Define execution order**: Sequential order with parallel-ready pairs marked
+   - **Set exit criteria**: From Master Plan plus standard criteria (build passes, tests pass)
+   - **Use the `create-phase-plan` skill** to produce the document
+   - **Save** to `{PROJECT-DIR}/phases/{NAME}-PHASE-{NN}-{TITLE}.md`
+9. **Update `state.json`**: Create phase entry with tasks, set phase status to `"in_progress"`
 
 ## Mode 4: Create Task Handoff
 
@@ -107,22 +125,40 @@ When spawned to create a task handoff:
 1. **Read the Phase Plan** — task outline, dependencies
 2. **Read the Architecture** — contracts, interfaces, file structure
 3. **Read the Design** — design tokens, component specs (if UI task)
-4. **Read previous Task Report** (if task has dependencies on completed tasks)
-5. **Write a self-contained handoff**: Everything the Coder needs in ONE document
-   - Objective (1-3 sentences)
-   - Context (max 5 sentences — immediate technical context only)
-   - File targets with exact paths and CREATE/MODIFY actions
-   - Implementation steps (max 10, specific and actionable)
-   - **Inline contracts** — copy exact interfaces from Architecture, do NOT reference it
-   - **Inline design tokens** — copy actual values from Design, do NOT say "see design doc"
-   - Test requirements (specific, verifiable)
-   - Acceptance criteria (binary pass/fail)
-   - Constraints (what NOT to do)
-6. **Use the `create-task-handoff` skill** to produce the document
-7. **Save** to `{PROJECT-DIR}/tasks/{NAME}-TASK-P{NN}-T{NN}-{TITLE}.md`
-8. **Update `state.json`**: Set task handoff_doc path
+4. **Read previous Task Report(s)** — for each dependent completed task: path from `state.json → task.report_doc`
+5. **IF `state.json → task.review_doc != null`** (for the relevant completed task):
+   Read the Code Review at the path from `state.json → task.review_doc`
+6. **Execute `triage-report` skill** (task-level decision table):
+   - Write `task.review_verdict` ← verdict from Code Review frontmatter (or skip if no review doc)
+   - Write `task.review_action` ← resolved from task-level decision table (or skip if no review doc)
+
+**Decision routing after triage (step 6→7):**
+
+| `review_action` value | What to produce in step 7 |
+|-----------------------|--------------------------|
+| `"advanced"` | Normal Task Handoff for next task; include any carry-forward items in context section |
+| `"corrective_task_issued"` | Corrective Task Handoff; inline all Issues from Code Review; include original acceptance criteria |
+| `"halted"` | DO NOT produce a Task Handoff — write halt to state.json; stop |
+| `null` (no review doc) | Normal Task Handoff; include Task Report Recommendations in context section |
+
+7. **PLAN**: Produce Task Handoff (or corrective handoff, or halt) based on triage outcome:
+   - Write a self-contained handoff: Everything the Coder needs in ONE document
+     - Objective (1-3 sentences)
+     - Context (max 5 sentences — immediate technical context only)
+     - File targets with exact paths and CREATE/MODIFY actions
+     - Implementation steps (max 10, specific and actionable)
+     - **Inline contracts** — copy exact interfaces from Architecture, do NOT reference it
+     - **Inline design tokens** — copy actual values from Design, do NOT say "see design doc"
+     - Test requirements (specific, verifiable)
+     - Acceptance criteria (binary pass/fail)
+     - Constraints (what NOT to do)
+   - **Use the `create-task-handoff` skill** to produce the document
+   - **Save** to `{PROJECT-DIR}/tasks/{NAME}-TASK-P{NN}-T{NN}-{TITLE}.md`
+8. **Update `state.json`**: Set task `handoff_doc` path
 
 ### Corrective Task Handoffs
+
+> **NOTE:** The corrective handoff path is now subsumed by the triage step (step 6). When triage produces `review_action: "corrective_task_issued"`, the Planner follows these rules to construct the corrective handoff.
 
 When creating a corrective handoff after a review finds issues:
 
@@ -156,6 +192,7 @@ When spawned to generate a phase report after all tasks complete:
 - **`create-phase-plan`**: Guides phase planning and provides template
 - **`create-task-handoff`**: Guides task handoff creation and provides template
 - **`generate-phase-report`**: Guides phase report generation and provides template
+- **`triage-report`**: Decision tables for task-level and phase-level triage — read sequences, verdict/action resolution, state write contract
 
 ## Output Contract
 

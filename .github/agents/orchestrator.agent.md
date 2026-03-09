@@ -122,6 +122,12 @@ First, if `human_gate_mode` is `ask`, ask the human their preferred execution mo
 
 Then follow the execution loop:
 
+> **Triage attempts counter**: `triage_attempts` is a counter local to the current Orchestrator
+> invocation for a given task or phase transition. It resets to 0 for each new task transition
+> and each new phase transition. It is never persisted to state.json — it is runtime-local.
+> If after one re-spawn the invariant is still true, the pipeline halts —
+> the Orchestrator does NOT loop indefinitely (NFR-07).
+
 ```
 Read current_phase from state.json
 phase = phases[current_phase]
@@ -155,6 +161,29 @@ IF phase has incomplete tasks:
   IF task.status == "complete":
     → Spawn Reviewer for code review
     → Spawn Tactical Planner to update state from review
+
+    → RE-READ state.json
+    → TASK-LEVEL GATEKEEP:
+      task = phases[current_phase].tasks[current_task]
+      IF task.review_doc != null AND task.review_verdict == null:
+        triage_attempts += 1
+        IF triage_attempts > 1:
+          → Spawn Tactical Planner to halt pipeline with error:
+            "Triage invariant still violated after re-spawn. 
+             review_doc={task.review_doc}, review_verdict=null. 
+             Pipeline halted — requires human intervention."
+          → Display STATUS.md to human
+        ELSE:
+          → RE-SPAWN Tactical Planner (Mode 4) with instruction:
+            "Triage is incomplete. Task {task_number} has a code review at 
+             '{task.review_doc}' but review_verdict is null. Read the review 
+             document, execute the triage decision table from the triage-report 
+             skill, write review_verdict and review_action to state.json for 
+             task {task_number} in phase {phase_number}, then produce the 
+             Task Handoff for the next task."
+          → RE-READ state.json
+          → Verify invariant is now false before continuing
+
     → IF review verdict is "changes_requested":
       → Treat as minor failure → retry loop
     → IF review verdict is "rejected":
@@ -168,6 +197,30 @@ IF all tasks in phase complete:
   → Spawn Tactical Planner to generate Phase Report
   → Spawn Reviewer for Phase Review
   → Spawn Tactical Planner to update state from phase review
+
+  → RE-READ state.json
+  → PHASE-LEVEL GATEKEEP:
+    phase = phases[current_phase]
+    IF phase.phase_review != null AND phase.phase_review_verdict == null:
+      triage_attempts += 1
+      IF triage_attempts > 1:
+        → Spawn Tactical Planner to halt pipeline with error:
+          "Phase triage invariant still violated after re-spawn. 
+           phase_review={phase.phase_review}, phase_review_verdict=null. 
+           Pipeline halted — requires human intervention."
+        → Display STATUS.md to human
+      ELSE:
+        → RE-SPAWN Tactical Planner (Mode 3) with instruction:
+          "Phase triage is incomplete. Phase {phase_number} has a phase 
+           review at '{phase.phase_review}' but phase_review_verdict is 
+           null. Read the phase review document, execute the phase-level 
+           triage decision table from the triage-report skill, write 
+           phase_review_verdict and phase_review_action to state.json 
+           for phase {phase_number}, then produce the Phase Plan for 
+           phase {next_phase_number}."
+        → RE-READ state.json
+        → Verify invariant is now false before continuing
+
   → IF human_gate_mode == "phase":
     → Show phase results to human, wait for approval
   → Advance to next phase
