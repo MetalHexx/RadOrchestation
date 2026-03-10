@@ -7,6 +7,7 @@ tools:
   - search
   - edit
   - todo
+  - execute
 agents: []
 ---
 
@@ -70,7 +71,12 @@ When spawned to update state after an event:
    - Code review complete → set `task.review_doc` to the review document path (e.g., `reports/CODE-REVIEW-P{NN}-T{NN}.md`). Leave `task.review_verdict` and `task.review_action` as `null` — triage has not run yet.
    - Phase review complete → set `phase.phase_review` to the phase review document path (e.g., `reports/PHASE-REVIEW-P{NN}.md`). Leave `phase.phase_review_verdict` and `phase.phase_review_action` as `null` — triage has not run yet.
 3. **Update `project.updated`** timestamp
-4. **Write `state.json`**
+4. **Validate proposed state** — pre-write check:
+   - Write proposed state to a temporary file (e.g., `state.json.proposed`)
+   - Call: `node src/validate-state.js --current {state_path} --proposed {temp_path}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.valid === true`**: Commit — replace `state.json` with the proposed file
+   - **If `result.valid === false`**: Do NOT commit the write. Record each entry from `result.errors` in `errors.active_blockers`. Halt pipeline. Delete temp file.
 5. **Update `STATUS.md`** to reflect the new state
 
 ### State Update Rules
@@ -95,9 +101,12 @@ When spawned to plan a phase:
 5. **Read previous Phase Report** (if not first phase) — carry-forward items
 6. **IF `state.json → phase.phase_review != null`**:
    Read the Phase Review at the path from `state.json → phase.phase_review`
-7. **Execute `triage-report` skill** (phase-level decision table):
-   - Write `phase.phase_review_verdict` ← verdict from Phase Review frontmatter (or skip if `phase_review` is null)
-   - Write `phase.phase_review_action` ← resolved from phase-level decision table (or skip if `phase_review` is null)
+7. **Execute triage script** (phase-level):
+   - Call: `node src/triage.js --state {state_path} --level phase --project-dir {project_dir}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.success === true`**: The script has written `phase_review_verdict` and `phase_review_action` to `state.json`. Use `result.action` to determine the routing in step 8.
+   - **If `result.success === false`**: Record `result.error` in `errors.active_blockers`, halt pipeline — do NOT proceed to step 8.
+   - **If `phase.phase_review` is `null`**: Skip this step entirely (no triage needed).
 
 **Decision routing after triage (step 7→8):**
 
@@ -116,7 +125,13 @@ When spawned to plan a phase:
    - **Set exit criteria**: From Master Plan plus standard criteria (build passes, tests pass)
    - **Use the `create-phase-plan` skill** to produce the document
    - **Save** to `{PROJECT-DIR}/phases/{NAME}-PHASE-{NN}-{TITLE}.md`
-9. **Update `state.json`**: Create phase entry with tasks, set phase status to `"in_progress"`
+9. **Update `state.json`** (with pre-write validation):
+   - Prepare proposed state: create phase entry with tasks, set phase status to `"in_progress"`, update `project.updated` timestamp
+   - Write proposed state to a temporary file (e.g., `state.json.proposed`)
+   - Call: `node src/validate-state.js --current {state_path} --proposed {temp_path}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.valid === true`**: Commit — replace `state.json` with the proposed file
+   - **If `result.valid === false`**: Do NOT commit the write. Record each entry from `result.errors` in `errors.active_blockers`. Halt pipeline. Delete temp file.
 
 ## Mode 4: Create Task Handoff
 
@@ -128,9 +143,12 @@ When spawned to create a task handoff:
 4. **Read previous Task Report(s)** — for each dependent completed task: path from `state.json → task.report_doc`
 5. **IF `state.json → task.review_doc != null`** (for the relevant completed task):
    Read the Code Review at the path from `state.json → task.review_doc`
-6. **Execute `triage-report` skill** (task-level decision table):
-   - Write `task.review_verdict` ← verdict from Code Review frontmatter (or skip if no review doc)
-   - Write `task.review_action` ← resolved from task-level decision table (or skip if no review doc)
+6. **Execute triage script** (task-level):
+   - Call: `node src/triage.js --state {state_path} --level task --project-dir {project_dir}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.success === true`**: The script has written `review_verdict` and `review_action` to `state.json`. Use `result.action` to determine the routing in step 7.
+   - **If `result.success === false`**: Record `result.error` in `errors.active_blockers`, halt pipeline — do NOT proceed to step 7.
+   - **If `task.review_doc` is `null`** (for the relevant completed task): Skip this step entirely (no triage needed).
 
 **Decision routing after triage (step 6→7):**
 
@@ -154,7 +172,13 @@ When spawned to create a task handoff:
      - Constraints (what NOT to do)
    - **Use the `create-task-handoff` skill** to produce the document
    - **Save** to `{PROJECT-DIR}/tasks/{NAME}-TASK-P{NN}-T{NN}-{TITLE}.md`
-8. **Update `state.json`**: Set task `handoff_doc` path
+8. **Update `state.json`** (with pre-write validation):
+   - Prepare proposed state: set task `handoff_doc` path, update `project.updated` timestamp
+   - Write proposed state to a temporary file (e.g., `state.json.proposed`)
+   - Call: `node src/validate-state.js --current {state_path} --proposed {temp_path}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.valid === true`**: Commit — replace `state.json` with the proposed file
+   - **If `result.valid === false`**: Do NOT commit the write. Record each entry from `result.errors` in `errors.active_blockers`. Halt pipeline. Delete temp file.
 
 ### Corrective Task Handoffs
 
@@ -185,14 +209,20 @@ When spawned to generate a phase report after all tasks complete:
 10. **Identify carry-forward items**: What the next phase must address
 11. **Use the `generate-phase-report` skill** to produce the document
 12. **Save** to `{PROJECT-DIR}/reports/{NAME}-PHASE-REPORT-P{NN}.md`
-13. **Update `state.json`**: Set phase_report path
+13. **Update `state.json`** (with pre-write validation):
+   - Prepare proposed state: set `phase_report` path, update `project.updated` timestamp
+   - Write proposed state to a temporary file (e.g., `state.json.proposed`)
+   - Call: `node src/validate-state.js --current {state_path} --proposed {temp_path}`
+   - Parse JSON stdout: `result = JSON.parse(stdout)`
+   - **If `result.valid === true`**: Commit — replace `state.json` with the proposed file
+   - **If `result.valid === false`**: Do NOT commit the write. Record each entry from `result.errors` in `errors.active_blockers`. Halt pipeline. Delete temp file.
 
 ## Skills
 
 - **`create-phase-plan`**: Guides phase planning and provides template
 - **`create-task-handoff`**: Guides task handoff creation and provides template
 - **`generate-phase-report`**: Guides phase report generation and provides template
-- **`triage-report`**: Decision tables for task-level and phase-level triage — read sequences, verdict/action resolution, state write contract
+- **`triage-report`**: Decision tables for task-level and phase-level triage — **documentation-only reference**. The authoritative executor is `src/triage.js`. The tables remain for human readability and as the specification the script implements. Agents call the script, not the tables directly.
 
 ## Output Contract
 

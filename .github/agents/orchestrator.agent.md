@@ -6,6 +6,7 @@ tools:
   - read
   - search
   - agent
+  - execute
 agents:
   - Research
   - Product Manager
@@ -120,111 +121,109 @@ First, if `human_gate_mode` is `ask`, ask the human their preferred execution mo
 - **Task-by-task**: Gate after each task (maximum control)
 - **Autonomous**: No gates during execution (fastest)
 
-Then follow the execution loop:
+Then follow the **script-based execution loop**:
 
-> **Triage attempts counter**: `triage_attempts` is a counter local to the current Orchestrator
-> invocation for a given task or phase transition. It resets to 0 for each new task transition
-> and each new phase transition. It is never persisted to state.json — it is runtime-local.
-> If after one re-spawn the invariant is still true, the pipeline halts —
-> the Orchestrator does NOT loop indefinitely (NFR-07).
+##### Script Invocation
+
+Run the Next-Action Resolver script to determine the next action:
 
 ```
-Read current_phase from state.json
-phase = phases[current_phase]
-
-IF phase is null OR all phases complete:
-  → Transition to "review" tier (spawn Tactical Planner to update state)
-
-IF phase.status == "not_started":
-  → Spawn Tactical Planner to create the Phase Plan document
-  → Re-read state.json
-
-IF phase has incomplete tasks:
-  task = find first incomplete task
-
-  IF task.status == "not_started":
-    IF task handoff doc does not exist:
-      → Spawn Tactical Planner to create the Task Handoff
-    → Spawn Coder to execute the task
-    → Spawn Tactical Planner to update state from task report
-    → Re-read state.json
-
-  IF task.status == "failed":
-    IF task.retries < max_retries AND task.severity == "minor":
-      → Spawn Tactical Planner to create a corrective task handoff
-      → Spawn Coder to execute the corrective task
-      → Spawn Tactical Planner to update state
-    ELSE:
-      → Spawn Tactical Planner to halt the pipeline
-      → Display STATUS.md to human
-
-  IF task.status == "complete":
-    → Spawn Reviewer for code review
-    → Spawn Tactical Planner to update state from review
-
-    → RE-READ state.json
-    → TASK-LEVEL GATEKEEP:
-      task = phases[current_phase].tasks[current_task]
-      IF task.review_doc != null AND task.review_verdict == null:
-        triage_attempts += 1
-        IF triage_attempts > 1:
-          → Spawn Tactical Planner to halt pipeline with error:
-            "Triage invariant still violated after re-spawn. 
-             review_doc={task.review_doc}, review_verdict=null. 
-             Pipeline halted — requires human intervention."
-          → Display STATUS.md to human
-        ELSE:
-          → RE-SPAWN Tactical Planner (Mode 4) with instruction:
-            "Triage is incomplete. Task {task_number} has a code review at 
-             '{task.review_doc}' but review_verdict is null. Read the review 
-             document, execute the triage decision table from the triage-report 
-             skill, write review_verdict and review_action to state.json for 
-             task {task_number} in phase {phase_number}, then produce the 
-             Task Handoff for the next task."
-          → RE-READ state.json
-          → Verify invariant is now false before continuing
-
-    → IF review verdict is "changes_requested":
-      → Treat as minor failure → retry loop
-    → IF review verdict is "rejected":
-      → Treat as critical failure → halt
-    → Advance to next task
-
-  IF human_gate_mode == "task":
-    → Show task results to human, wait for approval
-
-IF all tasks in phase complete:
-  → Spawn Tactical Planner to generate Phase Report
-  → Spawn Reviewer for Phase Review
-  → Spawn Tactical Planner to update state from phase review
-
-  → RE-READ state.json
-  → PHASE-LEVEL GATEKEEP:
-    phase = phases[current_phase]
-    IF phase.phase_review != null AND phase.phase_review_verdict == null:
-      triage_attempts += 1
-      IF triage_attempts > 1:
-        → Spawn Tactical Planner to halt pipeline with error:
-          "Phase triage invariant still violated after re-spawn. 
-           phase_review={phase.phase_review}, phase_review_verdict=null. 
-           Pipeline halted — requires human intervention."
-        → Display STATUS.md to human
-      ELSE:
-        → RE-SPAWN Tactical Planner (Mode 3) with instruction:
-          "Phase triage is incomplete. Phase {phase_number} has a phase 
-           review at '{phase.phase_review}' but phase_review_verdict is 
-           null. Read the phase review document, execute the phase-level 
-           triage decision table from the triage-report skill, write 
-           phase_review_verdict and phase_review_action to state.json 
-           for phase {phase_number}, then produce the Phase Plan for 
-           phase {next_phase_number}."
-        → RE-READ state.json
-        → Verify invariant is now false before continuing
-
-  → IF human_gate_mode == "phase":
-    → Show phase results to human, wait for approval
-  → Advance to next phase
+node src/next-action.js --state {base_path}/{PROJECT-NAME}/state.json --config .github/orchestration.yml
 ```
+
+- `--state` is required — always pass the path to the project's `state.json`
+- `--config` is optional — pass it when the project's `human_gate_mode` is `"ask"` and needs resolution from config
+
+##### JSON Parsing
+
+Capture stdout from the script. Parse it:
+
+```
+result = JSON.parse(stdout)
+```
+
+If the script exits with code 1 and stdout is not valid JSON, read stderr for diagnostics and halt the pipeline.
+
+The result object has this shape:
+
+```json
+{
+  "action": "<NEXT_ACTIONS enum value>",
+  "context": {
+    "tier": "<pipeline tier>",
+    "phase_index": "<number | null>",
+    "task_index": "<number | null>",
+    "phase_id": "<string | null>",
+    "task_id": "<string | null>",
+    "details": "<explanation>"
+  }
+}
+```
+
+##### Triage Attempts Counter
+
+`triage_attempts` is a counter local to the current Orchestrator invocation.
+
+- Initialize to `0` at the start of the execution loop
+- Increment by `1` when `result.action` is `triage_task` or `triage_phase`
+- Reset to `0` when `result.action` is `advance_task` or `advance_phase`
+- If `triage_attempts > 1`: **HALT** the pipeline instead of spawning triage again — spawn Tactical Planner to halt with error message identifying the stuck triage invariant
+- This counter is **NEVER** persisted to `state.json` — it is runtime-local only
+
+##### Action→Agent Mapping
+
+Pattern-match on `result.action` and perform the corresponding action. All 35 `NEXT_ACTIONS` enum values are covered:
+
+| `result.action` | Agent/Action | Instructions |
+|---|---|---|
+| `init_project` | Spawn **Tactical Planner** | Initialize project folder, state.json, STATUS.md. Then re-read state and re-run script. |
+| `display_halted` | **Display to Human** | Show STATUS.md and `errors.active_blockers` from state.json. Ask human how to proceed. |
+| `spawn_research` | Spawn **Research Agent** | Pass brainstorming doc (if exists) + human idea. Output: RESEARCH-FINDINGS.md. Then spawn Tactical Planner to update state. |
+| `spawn_prd` | Spawn **Product Manager** | Pass brainstorming doc (if exists) + RESEARCH-FINDINGS.md. Output: PRD.md. Then spawn Tactical Planner to update state. |
+| `spawn_design` | Spawn **UX Designer** | Pass PRD.md + RESEARCH-FINDINGS.md. Output: DESIGN.md. Then spawn Tactical Planner to update state. |
+| `spawn_architecture` | Spawn **Architect** | Pass PRD.md + DESIGN.md + RESEARCH-FINDINGS.md. Output: ARCHITECTURE.md. Then spawn Tactical Planner to update state. |
+| `spawn_master_plan` | Spawn **Architect** | Pass all planning docs. Output: MASTER-PLAN.md. Then spawn Tactical Planner to update state. |
+| `request_plan_approval` | **Human Gate** | Display Master Plan summary. Ask human to approve before execution. Once approved, spawn Tactical Planner to set `planning.human_approved = true` and transition to execution. |
+| `transition_to_execution` | Spawn **Tactical Planner** | Set `current_tier = "execution"`. Then re-read state and re-run script. |
+| `create_phase_plan` | Spawn **Tactical Planner** (Mode 3) | Create Phase Plan for the phase at `result.context.phase_index`. Then re-read state and re-run script. |
+| `create_task_handoff` | Spawn **Tactical Planner** (Mode 4) | Create Task Handoff for the task at `result.context.task_index` in phase `result.context.phase_index`. Then re-read state and re-run script. |
+| `execute_task` | Spawn **Coder** | Execute the task using the handoff doc. Then spawn Tactical Planner to update state from the task report. Re-read state and re-run script. |
+| `update_state_from_task` | Spawn **Tactical Planner** (Mode 2) | Update state.json from the Coder's task report. Then re-read state and re-run script. |
+| `create_corrective_handoff` | Spawn **Tactical Planner** (Mode 4) | Create a corrective Task Handoff for the failed task. Then spawn Coder. Then spawn Tactical Planner to update state. Re-read state and re-run script. |
+| `halt_task_failed` | Spawn **Tactical Planner** | Halt pipeline — task failed with critical severity or exceeded max retries. Record in `errors.active_blockers`. Then display STATUS.md to human. |
+| `spawn_code_reviewer` | Spawn **Reviewer** | Code review for the completed task. Then spawn Tactical Planner to update state (record `review_doc` path). Re-read state and re-run script. |
+| `update_state_from_review` | Spawn **Tactical Planner** (Mode 2) | Update state.json with the code review document path. Then re-read state and re-run script. |
+| `triage_task` | **Check `triage_attempts`**, then Spawn **Tactical Planner** (Mode 4) | **BEFORE spawning**: increment `triage_attempts`. If `triage_attempts > 1`: do NOT spawn — instead halt pipeline (see `halt_triage_invariant`). Otherwise: spawn Tactical Planner with instruction to read the code review at the task's `review_doc` path, execute triage (call `node src/triage.js --level task`), write `review_verdict` and `review_action` to state.json, then produce the next Task Handoff. Re-read state and re-run script. |
+| `halt_triage_invariant` | Spawn **Tactical Planner** | Halt pipeline with error: "Triage invariant still violated after re-spawn. review_doc is set but review_verdict is null. Pipeline halted — requires human intervention." Display STATUS.md to human. |
+| `retry_from_review` | Spawn **Tactical Planner** (Mode 4) | Create corrective Task Handoff to address `changes_requested` issues. Then spawn Coder. Then spawn Tactical Planner to update state. Re-read state and re-run script. |
+| `halt_from_review` | Spawn **Tactical Planner** | Halt pipeline — code review verdict is `rejected`. Record in `errors.active_blockers`. Display STATUS.md to human. |
+| `advance_task` | Spawn **Tactical Planner** (Mode 2) | Advance to next task. **Reset `triage_attempts` to 0.** Update state.json. Re-read state and re-run script. |
+| `gate_task` | **Human Gate** | Show task results to human. Wait for approval before continuing. Then re-read state and re-run script. |
+| `generate_phase_report` | Spawn **Tactical Planner** (Mode 5) | Generate Phase Report for the completed phase. Then re-read state and re-run script. |
+| `spawn_phase_reviewer` | Spawn **Reviewer** | Phase review for the completed phase. Then spawn Tactical Planner to update state (record `phase_review` path). Re-read state and re-run script. |
+| `update_state_from_phase_review` | Spawn **Tactical Planner** (Mode 2) | Update state.json with the phase review document path. Then re-read state and re-run script. |
+| `triage_phase` | **Check `triage_attempts`**, then Spawn **Tactical Planner** (Mode 3) | **BEFORE spawning**: increment `triage_attempts`. If `triage_attempts > 1`: do NOT spawn — instead halt pipeline (see `halt_phase_triage_invariant`). Otherwise: spawn Tactical Planner with instruction to read the phase review at the phase's `phase_review` path, execute triage (call `node src/triage.js --level phase`), write `phase_review_verdict` and `phase_review_action` to state.json, then produce the Phase Plan for the next phase. Re-read state and re-run script. |
+| `halt_phase_triage_invariant` | Spawn **Tactical Planner** | Halt pipeline with error: "Phase triage invariant still violated after re-spawn. phase_review is set but phase_review_verdict is null. Pipeline halted — requires human intervention." Display STATUS.md to human. |
+| `gate_phase` | **Human Gate** | Show phase results to human. Wait for approval before continuing. Then re-read state and re-run script. |
+| `advance_phase` | Spawn **Tactical Planner** (Mode 2) | Advance to next phase. **Reset `triage_attempts` to 0.** Update state.json (increment `current_phase`). Re-read state and re-run script. |
+| `transition_to_review` | Spawn **Tactical Planner** (Mode 2) | Set `current_tier = "review"`. Update state.json. Then re-read state and re-run script. |
+| `spawn_final_reviewer` | Spawn **Reviewer** | Final comprehensive review. Then spawn Tactical Planner to update state. Re-read state and re-run script. |
+| `request_final_approval` | **Human Gate** | Display final review to human. Ask human to approve or request changes. Once approved, spawn Tactical Planner to set `final_review.human_approved = true` and transition to complete. |
+| `transition_to_complete` | Spawn **Tactical Planner** (Mode 2) | Set `current_tier = "complete"`. Update state.json. Then re-read state and re-run script. |
+| `display_complete` | **Display to Human** | Show completion summary. No further actions. |
+
+##### Post-Action Loop
+
+After spawning the indicated agent per the mapping table above, the Orchestrator must:
+
+1. Re-read `state.json` (the spawned agent may have changed it)
+2. Call the script again: `node src/next-action.js --state {base_path}/{PROJECT-NAME}/state.json --config .github/orchestration.yml`
+3. Parse the new result and repeat the pattern-match
+4. Continue until the script returns a **terminal action** (`display_complete` or `display_halted`) or a **human gate action** (`request_plan_approval`, `request_final_approval`, `gate_task`, `gate_phase`)
+
+> **Important**: ALL routing derives from the script's `result.action` value. The Orchestrator reads
+> `state.json` only for display/context purposes, never for routing decisions. There must be ZERO
+> branching logic that depends on reading `state.json` fields directly for routing.
 
 #### 2e. Pipeline is `review`
 
