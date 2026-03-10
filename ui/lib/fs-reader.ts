@@ -1,0 +1,139 @@
+import { readFile, readdir, stat } from 'node:fs/promises';
+import path from 'node:path';
+
+import type { RawStateJson } from '@/types/state';
+import type { OrchestrationConfig } from '@/types/config';
+import type { ProjectSummary } from '@/types/components';
+import type { PipelineTier } from '@/types/state';
+
+import { resolveBasePath, resolveProjectDir } from '@/lib/path-resolver';
+import { parseYaml } from '@/lib/yaml-parser';
+
+/**
+ * Read and parse orchestration.yml from the workspace root.
+ *
+ * @param workspaceRoot - Absolute path to workspace root
+ * @returns Parsed OrchestrationConfig
+ * @throws If orchestration.yml does not exist or is invalid YAML
+ */
+export async function readConfig(workspaceRoot: string): Promise<OrchestrationConfig> {
+  const configPath = path.join(workspaceRoot, '.github', 'orchestration.yml');
+  const content = await readFile(configPath, 'utf-8');
+  return parseYaml<OrchestrationConfig>(content);
+}
+
+/**
+ * Discover all projects under the base path. Returns summaries with tier info.
+ * Each subdirectory under basePath is treated as a project.
+ * If state.json exists and is parseable, extract the pipeline tier.
+ * If state.json is missing, mark hasState: false.
+ * If state.json is malformed, mark hasMalformedState: true with errorMessage.
+ *
+ * @param workspaceRoot - Absolute path to workspace root
+ * @param basePath - Relative base path (e.g., ".github/projects")
+ * @returns Array of ProjectSummary objects
+ */
+export async function discoverProjects(
+  workspaceRoot: string,
+  basePath: string
+): Promise<ProjectSummary[]> {
+  const absBasePath = resolveBasePath(workspaceRoot, basePath);
+  const entries = await readdir(absBasePath, { withFileTypes: true });
+  const projects: ProjectSummary[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const projectName = entry.name;
+    const projectDir = resolveProjectDir(workspaceRoot, basePath, projectName);
+    const statePath = path.join(projectDir, 'state.json');
+
+    try {
+      const raw = await readFile(statePath, 'utf-8');
+      const state: RawStateJson = JSON.parse(raw);
+      projects.push({
+        name: projectName,
+        tier: state.pipeline.current_tier as PipelineTier,
+        hasState: true,
+        hasMalformedState: false,
+        brainstormingDoc: state.project.brainstorming_doc ?? null,
+      });
+    } catch (err) {
+      // Determine if the file is missing or malformed
+      const isNotFound =
+        err instanceof Error &&
+        'code' in err &&
+        (err as NodeJS.ErrnoException).code === 'ENOENT';
+
+      if (isNotFound) {
+        projects.push({
+          name: projectName,
+          tier: 'not_initialized',
+          hasState: false,
+          hasMalformedState: false,
+        });
+      } else {
+        projects.push({
+          name: projectName,
+          tier: 'not_initialized',
+          hasState: true,
+          hasMalformedState: true,
+          errorMessage:
+            err instanceof Error ? err.message : 'Unknown parse error',
+        });
+      }
+    }
+  }
+
+  return projects;
+}
+
+/**
+ * Read and parse a project's state.json. Returns null if file does not exist.
+ *
+ * @param projectDir - Absolute path to the project directory
+ * @returns Parsed RawStateJson, or null if state.json does not exist
+ * @throws If state.json exists but is malformed JSON
+ */
+export async function readProjectState(
+  projectDir: string
+): Promise<RawStateJson | null> {
+  const statePath = path.join(projectDir, 'state.json');
+  try {
+    const content = await readFile(statePath, 'utf-8');
+    return JSON.parse(content) as RawStateJson;
+  } catch (err) {
+    const isNotFound =
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'ENOENT';
+    if (isNotFound) return null;
+    throw err;
+  }
+}
+
+/**
+ * Read a document file and return its raw content.
+ *
+ * @param absolutePath - Absolute filesystem path to the document
+ * @returns Raw file content as a string
+ * @throws If file does not exist
+ */
+export async function readDocument(absolutePath: string): Promise<string> {
+  return readFile(absolutePath, 'utf-8');
+}
+
+/**
+ * Check if a file exists at the given absolute path.
+ *
+ * @param absolutePath - Absolute filesystem path to check
+ * @returns true if file exists, false otherwise
+ */
+export async function fileExists(absolutePath: string): Promise<boolean> {
+  try {
+    await stat(absolutePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
