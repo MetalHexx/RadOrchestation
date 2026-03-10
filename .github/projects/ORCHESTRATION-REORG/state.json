@@ -1,0 +1,45 @@
+{
+  "$schema": "orchestration-state-v2",
+  "project": {
+    "name": "ORCHESTRATION-REORG",
+    "created": "2026-03-10T12:00:00Z",
+    "updated": "2026-03-10T20:30:00Z"
+  },
+  "pipeline": {
+    "current_tier": "planning",
+    "human_gate_mode": "ask"
+  },
+  "planning": {
+    "status": "complete",
+    "brainstorming_doc": "ORCHESTRATION-REORG-BRAINSTORMING.md",
+    "steps": {
+      "research": { "status": "complete", "output": "ORCHESTRATION-REORG-RESEARCH-FINDINGS.md" },
+      "prd": { "status": "complete", "output": "ORCHESTRATION-REORG-PRD.md" },
+      "design": { "status": "complete", "output": "ORCHESTRATION-REORG-DESIGN.md" },
+      "architecture": { "status": "complete", "output": "ORCHESTRATION-REORG-ARCHITECTURE.md" },
+      "master_plan": { "status": "complete", "output": "ORCHESTRATION-REORG-MASTER-PLAN.md" }
+    },
+    "human_approved": false
+  },
+  "execution": {
+    "status": "not_started",
+    "current_phase": 0,
+    "total_phases": 0,
+    "phases": []
+  },
+  "final_review": {
+    "status": "not_started",
+    "report_doc": null,
+    "human_approved": false
+  },
+  "errors": {
+    "total_retries": 0,
+    "total_halts": 0,
+    "active_blockers": []
+  },
+  "limits": {
+    "max_phases": 10,
+    "max_tasks_per_phase": 8,
+    "max_retries_per_task": 2
+  }
+}
